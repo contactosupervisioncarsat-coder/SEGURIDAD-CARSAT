@@ -1,0 +1,6 @@
+{
+  "name": "CARSAT Monitoreo CCTV - Base Maestra",
+  "description": "Sistema de gestión técnica, control de edificios, llaves, administradores y guardias operativas para sala de monitoreo CCTV.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
