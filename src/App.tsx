@@ -1,4 +1,78 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+
+export function App() { // O el nombre que tenga tu componente principal
+  // ==========================================
+  // 1. TUS ESTADOS EXISTENTES (Mantenlos tal cual)
+  // ==========================================
+  const [buildings, setBuildings] = useState([]);
+  const [administrators, setAdministrators] = useState([]);
+  // ... los demás estados que ya tenías ...
+
+  // ==========================================
+  // 2. CARGA INICIAL Y AUTO-SINCRONIZACIÓN (10 segundos)
+  // ==========================================
+  useEffect(() => {
+    const fetchGlobalData = async () => {
+      try {
+        const res = await fetch('/api/database');
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            if (data.buildings) setBuildings(data.buildings);
+            if (data.administrators) setAdministrators(data.administrators);
+            // Si tienes más datos guardados en Supabase, cárgalos aquí también:
+            // if (data.keys) setKeys(data.keys);
+          }
+        }
+      } catch (err) {
+        console.error("Error al obtener datos del servidor central:", err);
+      }
+    };
+
+    // Carga inicial al entrar a la web
+    fetchGlobalData();
+
+    // Revisa en la nube si hay cambios nuevos cada 10 segundos
+    const interval = setInterval(fetchGlobalData, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ==========================================
+  // 3. FUNCIÓN PARA GUARDAR EN SUPABASE
+  // ==========================================
+  const syncWithServer = async (updatedBuildings, updatedAdmins) => {
+    try {
+      await fetch('/api/database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buildings: updatedBuildings || buildings,
+          administrators: updatedAdmins || administrators,
+        }),
+      });
+    } catch (err) {
+      console.error("Error al guardar en el servidor central:", err);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // DÓNDE USAR `syncWithServer`:
+  // En las funciones que agregan, editan o borran datos
+  // -------------------------------------------------------------
+  const handleAddBuilding = (newBuilding) => {
+    const updated = [...buildings, newBuilding];
+    setBuildings(updated);
+    
+    // Mandamos el estado actualizado al servidor
+    syncWithServer(updated, administrators);
+  };
+
+  return (
+    <div>
+      {/* Tu interfaz actual */}
+    </div>
+  );
+}
 import { Building, Administrator, KeyItem, ActiveTab, AuditLog, DecommissionRecord } from './types';
 import { StorageService } from './services/storage';
 import { Header } from './components/Header';
@@ -44,6 +118,7 @@ export default function App() {
   const [keys, setKeys] = useState<KeyItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [decommissions, setDecommissions] = useState<DecommissionRecord[]>([]);
+  syncWithServer(nuevosEdificios, nuevosAdministradores);
 
   // Search & Filter state for Ficha view
   const [searchQuery, setSearchQuery] = useState('');
@@ -238,6 +313,7 @@ export default function App() {
                 activeTab === 'modificar_datos'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  syncWithServer(nuevosEdificios, nuevosAdministradores);
               }`}
             >
               <Edit3 className="w-4 h-4 text-emerald-400" />
@@ -251,6 +327,7 @@ export default function App() {
                 activeTab === 'tablero_llaves'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  syncWithServer(nuevosEdificios, nuevosAdministradores);
               }`}
             >
               <Key className="w-4 h-4 text-amber-400" />
@@ -267,6 +344,7 @@ export default function App() {
                 activeTab === 'administradores'
                   ? 'bg-sky-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  syncWithServer(nuevosEdificios, nuevosAdministradores);
               }`}
             >
               <Users className="w-4 h-4 text-sky-400" />
