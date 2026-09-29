@@ -95,7 +95,7 @@ async function startServer() {
     }
 
     // Clave de seguridad privada para Supervisor
-    const validPin = 'C4r54t@2026'; // <-- Reemplaza con tu nueva contraseña
+    const validPin = '0099'; // <-- Reemplaza con tu nueva contraseña
     if (pin && pin !== validPin) {
       return res.status(401).json({
         success: false,
