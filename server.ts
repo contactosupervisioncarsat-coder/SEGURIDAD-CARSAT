@@ -94,9 +94,9 @@ async function startServer() {
       });
     }
 
-    // Default PIN is 2026 or empty if direct email authorization
-    const validPin = '2026';
-    if (pin && pin !== validPin && pin !== 'carsat2026' && pin !== '1234') {
+    // Clave de seguridad privada para Supervisor
+    const validPin = 'C4r54t@2026'; // <-- Reemplaza con tu nueva contraseña
+    if (pin && pin !== validPin) {
       return res.status(401).json({
         success: false,
         error: 'Clave de seguridad de supervisor incorrecta.',
