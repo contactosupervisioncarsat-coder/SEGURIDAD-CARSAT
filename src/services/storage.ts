@@ -53,7 +53,6 @@ export const StorageService = {
   },
 
   getBuildings(): Building[] {
-    // Only return active buildings by default for monitoring operations
     return this.getAllBuildings().filter((b) => b.status !== 'BAJA');
   },
 
@@ -80,7 +79,6 @@ export const StorageService = {
       const oldBuilding = buildings[index];
       buildings[index] = updatedBuilding;
 
-      // Log changes
       const diffFields = Object.keys(updatedBuilding) as (keyof Building)[];
       diffFields.forEach((field) => {
         if (
@@ -117,6 +115,7 @@ export const StorageService = {
     }
 
     safeSet(STORAGE_KEYS.BUILDINGS, buildings);
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
@@ -125,7 +124,7 @@ export const StorageService = {
     newNote: string,
     operatorName: string
   ): Building | null {
-    const buildings = this.getBuildings();
+    const buildings = this.getAllBuildings();
     const index = buildings.findIndex((b) => b.id === buildingId);
     if (index === -1) return null;
 
@@ -153,6 +152,7 @@ export const StorageService = {
       actionType: 'NOTA_OPERATIVA',
     });
 
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
     return building;
   },
@@ -163,7 +163,6 @@ export const StorageService = {
     const filtered = buildings.filter((b) => b.id !== id);
     safeSet(STORAGE_KEYS.BUILDINGS, filtered);
 
-    // Also remove associated keys from board
     const keys = this.getKeys();
     const filteredKeys = keys.filter((k) => k.buildingId !== id);
     safeSet(STORAGE_KEYS.KEYS, filteredKeys);
@@ -195,7 +194,6 @@ export const StorageService = {
     const remaining = buildings.filter((b) => !demoIds.has(b.id));
     safeSet(STORAGE_KEYS.BUILDINGS, remaining);
 
-    // Also remove associated demo keys
     const keys = this.getKeys();
     const filteredKeys = keys.filter((k) => !demoIds.has(k.buildingId));
     safeSet(STORAGE_KEYS.KEYS, filteredKeys);
@@ -236,12 +234,14 @@ export const StorageService = {
       admins.push(admin);
     }
     safeSet(STORAGE_KEYS.ADMINISTRATORS, admins);
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
   deleteAdministrator(id: string): void {
     const admins = this.getAdministrators().filter((a) => a.id !== id);
     safeSet(STORAGE_KEYS.ADMINISTRATORS, admins);
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
@@ -269,9 +269,8 @@ export const StorageService = {
     }
     safeSet(STORAGE_KEYS.KEYS, keys);
 
-    // Sync with building keyHookNumber if building exists
     if (keyItem.buildingId) {
-      const buildings = this.getBuildings();
+      const buildings = this.getAllBuildings();
       const bIndex = buildings.findIndex((b) => b.id === keyItem.buildingId);
       if (bIndex >= 0) {
         buildings[bIndex].keyHookNumber = keyItem.hookNumber;
@@ -292,12 +291,14 @@ export const StorageService = {
       actionType: 'LLAVE_GANCHO',
     });
 
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
   deleteKey(id: string): void {
     const keys = this.getKeys().filter((k) => k.id !== id);
     safeSet(STORAGE_KEYS.KEYS, keys);
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
@@ -338,7 +339,6 @@ export const StorageService = {
   },
 
   getUserRole(): 'OPERADOR' | 'SUPERVISOR' {
-    // If stored as supervisor, verify that session is still valid
     const role = safeGet<'OPERADOR' | 'SUPERVISOR'>(STORAGE_KEYS.USER_ROLE, 'OPERADOR');
     if (role === 'SUPERVISOR' && !this.isSupervisorVerified()) {
       return 'OPERADOR';
@@ -374,7 +374,6 @@ export const StorageService = {
       };
     }
 
-    // Try server verification endpoint if running
     try {
       const res = await fetch('/api/auth/supervisor', {
         method: 'POST',
@@ -394,7 +393,6 @@ export const StorageService = {
         return { success: false, error: data.error };
       }
     } catch {
-      // Offline fallback: verify email directly
       if (cleanEmail === this.SUPERVISOR_EMAIL) {
         this.setSupervisorVerified(true);
         this.setUserRole('SUPERVISOR');
@@ -423,8 +421,7 @@ export const StorageService = {
 
   addAuditLog(log: AuditLog): void {
     const logs = this.getAuditLogs();
-    logs.unshift(log); // Newer first
-    // Limit to latest 300 logs for cleanliness
+    logs.unshift(log);
     if (logs.length > 300) logs.length = 300;
     safeSet(STORAGE_KEYS.AUDIT, logs);
   },
@@ -459,11 +456,8 @@ export const StorageService = {
     const nowFormat = nowIso.replace('T', ' ').substring(0, 16);
 
     const oldHook = building.keyHookNumber;
-
-    // Snapshot of the building before modifying
     const snapshot = JSON.parse(JSON.stringify(building));
 
-    // Update building status
     building.status = 'BAJA';
     building.updatedAt = nowIso;
     if (params.keyReturned === 'SI') {
@@ -474,7 +468,6 @@ export const StorageService = {
     allBuildings[index] = building;
     safeSet(STORAGE_KEYS.BUILDINGS, allBuildings);
 
-    // If key was in tablero and returned, free hook or update key item
     if (params.keyReturned === 'SI' && oldHook) {
       const keys = this.getKeys();
       const kIndex = keys.findIndex((k) => k.buildingId === building.id);
@@ -487,7 +480,6 @@ export const StorageService = {
       }
     }
 
-    // Create decommission record
     const decommId = `BAJA-${String(Date.now()).slice(-4)}`;
     const record: DecommissionRecord = {
       id: decommId,
@@ -512,7 +504,6 @@ export const StorageService = {
     decommissions.unshift(record);
     safeSet(STORAGE_KEYS.DECOMMISSIONS, decommissions);
 
-    // Audit log
     this.addAuditLog({
       id: 'LOG-' + Date.now(),
       buildingId: building.id,
@@ -525,6 +516,7 @@ export const StorageService = {
       actionType: 'BAJA_EDIFICIO',
     });
 
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
     return record;
   },
@@ -552,6 +544,7 @@ export const StorageService = {
       actionType: 'REACTIVACION_EDIFICIO',
     });
 
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
     return true;
   },
@@ -574,21 +567,12 @@ export const StorageService = {
   importDataJSON(jsonStr: string, operatorName: string): boolean {
     try {
       const data = JSON.parse(jsonStr);
-      if (Array.isArray(data.buildings)) {
-        safeSet(STORAGE_KEYS.BUILDINGS, data.buildings);
-      }
-      if (Array.isArray(data.administrators)) {
-        safeSet(STORAGE_KEYS.ADMINISTRATORS, data.administrators);
-      }
-      if (Array.isArray(data.keys)) {
-        safeSet(STORAGE_KEYS.KEYS, data.keys);
-      }
-      if (Array.isArray(data.operators)) {
-        safeSet(STORAGE_KEYS.OPERATORS, data.operators);
-      }
-      if (Array.isArray(data.decommissions)) {
-        safeSet(STORAGE_KEYS.DECOMMISSIONS, data.decommissions);
-      }
+      if (Array.isArray(data.buildings)) safeSet(STORAGE_KEYS.BUILDINGS, data.buildings);
+      if (Array.isArray(data.administrators)) safeSet(STORAGE_KEYS.ADMINISTRATORS, data.administrators);
+      if (Array.isArray(data.keys)) safeSet(STORAGE_KEYS.KEYS, data.keys);
+      if (Array.isArray(data.operators)) safeSet(STORAGE_KEYS.OPERATORS, data.operators);
+      if (Array.isArray(data.decommissions)) safeSet(STORAGE_KEYS.DECOMMISSIONS, data.decommissions);
+      if (Array.isArray(data.auditLogs)) safeSet(STORAGE_KEYS.AUDIT, data.auditLogs);
 
       this.addAuditLog({
         id: 'LOG-' + Date.now(),
@@ -602,6 +586,7 @@ export const StorageService = {
         actionType: 'IMPORTACION',
       });
 
+      this.pushToServer();
       window.dispatchEvent(new Event('carsat_data_changed'));
       return true;
     } catch (e) {
@@ -617,6 +602,7 @@ export const StorageService = {
     safeSet(STORAGE_KEYS.OPERATORS, INITIAL_OPERATORS);
     safeSet(STORAGE_KEYS.AUDIT, INITIAL_AUDIT_LOGS);
     safeSet(STORAGE_KEYS.DECOMMISSIONS, INITIAL_DECOMMISSIONS);
+    this.pushToServer();
     window.dispatchEvent(new Event('carsat_data_changed'));
   },
 
@@ -729,42 +715,58 @@ export const StorageService = {
     return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   },
 
-  // --- SERVER CENTRAL DATABASE SYNC ---
+  // --- SERVER & SUPABASE DATABASE SYNC ---
   async syncWithServer(): Promise<boolean> {
     try {
-      const res = await fetch('/api/database');
+      const res = await fetch('/api/data');
       if (!res.ok) return false;
-      const serverData = await res.json();
-      if (!serverData) {
-        // If server DB file is not yet populated, push initial dataset
+
+      const serverPayload = await res.json();
+      if (!serverPayload) {
+        // Si el servidor o la BD en Supabase aún están vacíos, enviamos el estado local inicial
         await this.pushToServer();
         return true;
       }
 
-      const localUpdated = safeGet<string>('carsat_last_sync_timestamp', '');
-      if (!localUpdated || (serverData.updatedAt && serverData.updatedAt > localUpdated)) {
-        if (serverData.buildings && Array.isArray(serverData.buildings)) {
-          safeSet(STORAGE_KEYS.BUILDINGS, serverData.buildings);
-        }
-        if (serverData.administrators && Array.isArray(serverData.administrators)) {
-          safeSet(STORAGE_KEYS.ADMINISTRATORS, serverData.administrators);
-        }
-        if (serverData.keys && Array.isArray(serverData.keys)) {
-          safeSet(STORAGE_KEYS.KEYS, serverData.keys);
-        }
-        if (serverData.decommissions && Array.isArray(serverData.decommissions)) {
-          safeSet(STORAGE_KEYS.DECOMMISSIONS, serverData.decommissions);
-        }
-        if (serverData.auditLogs && Array.isArray(serverData.auditLogs)) {
-          safeSet(STORAGE_KEYS.AUDIT, serverData.auditLogs);
-        }
-        safeSet('carsat_last_sync_timestamp', serverData.updatedAt || new Date().toISOString());
+      // Extraer datos si están dentro del wrapper 'content' o directamente en la raíz
+      const data = serverPayload.content || serverPayload;
+
+      let hasChanges = false;
+
+      if (data.buildings && Array.isArray(data.buildings)) {
+        safeSet(STORAGE_KEYS.BUILDINGS, data.buildings);
+        hasChanges = true;
+      }
+      if (data.administrators && Array.isArray(data.administrators)) {
+        safeSet(STORAGE_KEYS.ADMINISTRATORS, data.administrators);
+        hasChanges = true;
+      }
+      if (data.keys && Array.isArray(data.keys)) {
+        safeSet(STORAGE_KEYS.KEYS, data.keys);
+        hasChanges = true;
+      }
+      if (data.operators && Array.isArray(data.operators)) {
+        safeSet(STORAGE_KEYS.OPERATORS, data.operators);
+        hasChanges = true;
+      }
+      if (data.decommissions && Array.isArray(data.decommissions)) {
+        safeSet(STORAGE_KEYS.DECOMMISSIONS, data.decommissions);
+        hasChanges = true;
+      }
+      if (data.auditLogs && Array.isArray(data.auditLogs)) {
+        safeSet(STORAGE_KEYS.AUDIT, data.auditLogs);
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        safeSet('carsat_last_sync_timestamp', data.updatedAt || new Date().toISOString());
         window.dispatchEvent(new Event('carsat_data_changed'));
         return true;
       }
+
       return false;
-    } catch {
-      // In offline / preview fallback
+    } catch (e) {
+      console.warn('Fallback o error al sincronizar:', e);
       return false;
     }
   },
@@ -780,15 +782,16 @@ export const StorageService = {
         auditLogs: this.getAuditLogs(),
         updatedAt: new Date().toISOString(),
       };
-      await fetch('/api/database', {
+
+      await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
       safeSet('carsat_last_sync_timestamp', payload.updatedAt);
-    } catch {
-      // Offline fallback
+    } catch (e) {
+      console.error('Error enviando datos al servidor central:', e);
     }
   },
 };
-
